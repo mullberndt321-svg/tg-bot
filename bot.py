@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 import yt_dlp
 
-# Logging aktivieren, um Fehler zu sehen
+# Logging aktivieren
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -38,7 +38,8 @@ async def download_youtube_mp4(update: Update, context: ContextTypes.DEFAULT_TYP
         ydl_opts = {
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-            'max_filesize': 50 * 1024 * 1024,  # Telegram Bot API Limit beachten (ca. 50 MB)
+            'max_filesize': 50 * 1024 * 1024,
+            'cookiefile': 'cookies.txt',  # Nutzt die hochgeladene Cookie-Datei
         }
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -70,6 +71,7 @@ async def download_youtube_mp3(update: Update, context: ContextTypes.DEFAULT_TYP
                 'preferredquality': '192',
             }],
             'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+            'cookiefile': 'cookies.txt',  # Nutzt die hochgeladene Cookie-Datei
         }
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -96,15 +98,15 @@ async def download_spotify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     with tempfile.TemporaryDirectory() as temp_dir:
         try:
-            # spotdl sucht den Spotify-Titel auf YouTube und konvertiert ihn zu MP3
-            result = subprocess.run(['spotdl', url], cwd=temp_dir, capture_output=True, text=True)
+            result = subprocess.run(['spotdl', 'download', url], cwd=temp_dir, capture_output=True, text=True)
             
             if result.returncode != 0:
-                raise Exception(result.stderr or "Unbekannter Fehler bei spotdl")
+                error_msg = result.stderr.strip() or result.stdout.strip()
+                raise Exception(f"spotdl-Fehler: {error_msg[-300:]}")
                 
             mp3_files = [os.path.join(temp_dir, f) for f in os.listdir(temp_dir) if f.endswith('.mp3')]
             if not mp3_files:
-                raise Exception("Es konnte keine MP3-Datei gefunden werden.")
+                raise Exception("Es konnte keine MP3-Datei generiert werden.")
                 
             audio_file = mp3_files[0]
             
@@ -113,13 +115,11 @@ async def download_spotify(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=status_msg.message_id)
         except Exception as e:
-            await update.message.reply_text(f"❌ Spotify-Fehler: {str(e)}")
+            await update.message.reply_text(f"❌ {str(e)}")
 
 def main():
-    # Bot App initialisieren
     app = ApplicationBuilder().token(TOKEN).build()
     
-    # Befehle registrieren
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("mp4", download_youtube_mp4))
     app.add_handler(CommandHandler("mp3", download_youtube_mp3))
